@@ -17,7 +17,7 @@ def _hash_linha(row: pd.Series) -> str:
     """Gera um hash SHA-256 único por linha para controle de duplicatas."""
     partes = "|".join([
         str(row.get("DATA", "")),
-        str(row.get("FAVORECIDO", "")),
+        str(row.get("DESCRICAO", ""))[:100],
         str(row.get("VALOR", "")),
         str(row.get("RECURSO", "")),
         str(row.get("CONTA", "")),
@@ -48,10 +48,10 @@ def carregar(df: pd.DataFrame, arquivo_nome: str = "") -> dict:
 
     sql_insert = """
         INSERT INTO pagamentos
-            (data, ano, mes, descricao, favorecido, recurso, conta, valor,
+            (data, ano, mes, descricao, favorecido, recurso, secretaria, conta, valor,
              aba_origem, arquivo_origem, hash_linha)
         VALUES
-            (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
 
     for _, row in df.iterrows():
@@ -64,6 +64,7 @@ def carregar(df: pd.DataFrame, arquivo_nome: str = "") -> dict:
                 str(row.get("DESCRICAO", ""))[:2000],
                 str(row.get("FAVORECIDO", ""))[:500],
                 str(row.get("RECURSO", ""))[:200],
+                str(row.get("SECRETARIA", ""))[:100],
                 str(row.get("CONTA", ""))[:200],
                 float(row.get("VALOR", 0)),
                 str(row.get("ABA_ORIGEM", ""))[:100],

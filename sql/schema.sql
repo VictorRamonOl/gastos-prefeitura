@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS pagamentos (
     recurso          VARCHAR(200),
     conta            VARCHAR(200),
     valor            DECIMAL(15, 2),
+    secretaria       VARCHAR(100),
     aba_origem       VARCHAR(100),
     arquivo_origem   VARCHAR(200),
     hash_linha       VARCHAR(64)  UNIQUE,   -- evita duplicatas

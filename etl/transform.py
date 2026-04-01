@@ -9,6 +9,53 @@ import pandas as pd
 
 
 # -----------------------------------------------------------------
+# Mapeamento RECURSO → SECRETARIA
+# A ordem dos checks importa: mais específico primeiro.
+# -----------------------------------------------------------------
+def mapear_secretaria(recurso: str) -> str:
+    r = str(recurso).upper().strip()
+
+    # Educação
+    if any(k in r for k in ["FUNDEB", "FME", "PDDE", "PNAE", "PNATE", "PROCAD", "QSE"]):
+        return "EDUCAÇÃO"
+    if re.search(r"\b70%|\bFOLHA 70|PESSOAL 70|PESSOAL FME|FME PESSOAL", r):
+        return "EDUCAÇÃO"
+
+    # Saúde
+    if any(k in r for k in ["FMS", "CUSTEIO SUS", "INVEST SUS", "PAB", "PNAB",
+                              "PISO ENF", "PISO ENFER", "E MAC", "EMEN MAC", "EMENDA MAC",
+                              "SUS", "ATENÇÃO BAS", "PISO"]):
+        return "SAÚDE"
+
+    # Assistência Social
+    if any(k in r for k in ["FMAS", "FNAS", "GBF", "IGDBF", "PSB", "PBS",
+                              "SUAS", "CRIAN", "CREAS", "SNA", "MEDIA CR",
+                              "GESTÃO SUAS", "ASSIST"]):
+        return "ASSISTÊNCIA SOCIAL"
+
+    # Meio Ambiente
+    if "FMMA" in r:
+        return "MEIO AMBIENTE"
+
+    # Cultura
+    if any(k in r for k in ["CULTUR", "FEC", "FUND CULT"]):
+        return "CULTURA"
+
+    # Recursos Próprios / Administração
+    if any(k in r for k in [" RP", "RP ", "PESSOAL RP", "PESS RP", "PESOAL RP",
+                              "PESSOALRP", "PESSOAL/RP", "REC PROP", "RECURSO P",
+                              "FPM", "ICMS", "COSIP", "IRRF", "IR MUN", "ISS",
+                              "TRIB", "FUNPEQ", "CUSTEIO", "CIDE", "EMENDA EST",
+                              "EMENDA PAP", "ATM", "BENEF", "CONF BCOS", "FED BCOS",
+                              "CAIXA", "BB", "FEP", "ADO", "RCIDAD", "INVEST"]):
+        return "ADMINISTRAÇÃO/RP"
+    if r in ("RP", "CUSTEIO", "FUNPEQ", "FPM", "ICMS", "ISS", "IRRF", "BB", "CAIXA"):
+        return "ADMINISTRAÇÃO/RP"
+
+    return "OUTROS"
+
+
+# -----------------------------------------------------------------
 # Helpers de normalização
 # -----------------------------------------------------------------
 MESES_NUM = {
@@ -70,6 +117,21 @@ def extrair_mes_ano_aba(nome_aba: str) -> tuple[str | None, int | None]:
     m_ano = re.search(r"(20\d{2})", nome)
     ano = int(m_ano.group(1)) if m_ano else None
     return mes, ano
+
+
+def extrair_categoria_cabecalho(cabecalho_desc: str) -> str | None:
+    """
+    Extrai a secretaria/categoria a partir do nome da coluna de descrição.
+    Ex: 'FORNECEDOR/ DESPESA PAGA EDUCAÇÃO' → 'EDUCAÇÃO'
+        'FORNECEDOR/ DESPESAS PAGAS SAÚDE'  → 'SAÚDE'
+    """
+    txt = norm_upper(str(cabecalho_desc))
+    # Remove o prefixo padrão
+    txt = re.sub(r"FORNECEDOR[/\s]*", "", txt)
+    txt = re.sub(r"DESPESAS?\s+PAGAS?\s*", "", txt).strip()
+    if txt:
+        return txt
+    return None
 
 
 def extrair_favorecido(descricao: str) -> str:
@@ -139,7 +201,10 @@ def transformar_aba(df_raw: pd.DataFrame, nome_aba: str) -> pd.DataFrame:
     if not desc_cols:
         raise ValueError(f"[{nome_aba}] Colunas de descrição não encontradas.")
 
-    valor_cols = [idx_valor + i for i in range(3) if idx_valor + i < df_raw.shape[1]]
+    # Extrai categoria do cabeçalho da coluna descrição (ex: 2026 → "EDUCAÇÃO")
+    categoria_cabecalho = extrair_categoria_cabecalho(str(cabecalho[desc_cols[0]]))
+
+    # Só usa o índice principal do VALOR (evita pegar colunas adjacentes incorretas)
     mes_aba, ano_aba = extrair_mes_ano_aba(nome_aba)
     mes_num_aba = MESES_NUM.get(mes_aba)
 
@@ -151,20 +216,28 @@ def transformar_aba(df_raw: pd.DataFrame, nome_aba: str) -> pd.DataFrame:
         desc_partes = [norm(row.iloc[c]) for c in desc_cols if c < len(row) and norm(row.iloc[c])]
         descricao = " ".join(desc_partes).strip()
 
-        valor_partes = [row.iloc[c] for c in valor_cols if c < len(row) and pd.notna(row.iloc[c]) and str(row.iloc[c]).strip()]
-        if len(valor_partes) == 1 and isinstance(valor_partes[0], (int, float)):
-            valor = float(valor_partes[0])
-        else:
-            valor = limpar_valor(" ".join(str(v) for v in valor_partes))
-
-        if not descricao and valor == 0:
+        # ─── FIX: pula linhas sem descrição (são subtotais/linhas em branco) ───
+        if not descricao:
             continue
-        if any(kw in norm_upper(descricao) for kw in ("TOTAL", "SUBTOTAL")):
+
+        # Pula linhas de total/subtotal pela descrição
+        desc_up = norm_upper(descricao)
+        if any(kw in desc_up for kw in ("TOTAL", "SUBTOTAL")):
+            continue
+
+        # Lê valor direto do índice principal (sem concatenar múltiplas colunas)
+        val_raw = row.iloc[idx_valor] if idx_valor < len(row) else None
+        valor = limpar_valor(val_raw)
+
+        if valor <= 0:
             continue
 
         data = tratar_data(row.iloc[idx_data] if idx_data < len(row) else None)
         ano = data.year if pd.notna(data) else ano_aba
         mes = data.month if pd.notna(data) else mes_num_aba
+
+        # Secretaria: prioriza o que está no cabeçalho; fallback pelo RECURSO
+        secretaria = categoria_cabecalho if categoria_cabecalho else mapear_secretaria(recurso)
 
         linhas.append({
             "DATA": data,
@@ -173,6 +246,7 @@ def transformar_aba(df_raw: pd.DataFrame, nome_aba: str) -> pd.DataFrame:
             "DESCRICAO": descricao,
             "FAVORECIDO": extrair_favorecido(descricao),
             "RECURSO": recurso,
+            "SECRETARIA": secretaria,
             "CONTA": conta,
             "VALOR": valor,
             "ABA_ORIGEM": nome_aba,
