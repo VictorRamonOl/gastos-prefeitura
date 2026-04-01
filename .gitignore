@@ -1,0 +1,27 @@
+# Credenciais — NUNCA commitar
+.env
+
+# Arquivos Excel / dados brutos
+data/uploads/*.xlsx
+data/uploads/*.xls
+*.xlsx
+*.xls
+~$*.xlsx
+~$*.xls
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
