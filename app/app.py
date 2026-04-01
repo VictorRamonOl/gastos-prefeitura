@@ -194,127 +194,302 @@ tab_geral, tab_sec, tab_forn, tab_ranking, tab_detalhe, tab_admin = st.tabs([
 # =================================================================
 # ABA 1 — VISÃO GERAL
 # =================================================================
-with tab_geral:
-    st.subheader("Gasto mensal total")
+CORES_SEC = px.colors.qualitative.Set2   # paleta consistente entre todos os gráficos
 
-    gasto_mensal = (
-        base.groupby(["ano", "mes"], as_index=False)["valor"]
+with tab_geral:
+
+    # ── Linha 1: Evolução mensal empilhada por secretaria ──────────
+    st.markdown("### Evolução mensal de despesas por Secretaria")
+    gasto_mensal_sec = (
+        base.groupby(["ano", "mes", "secretaria"], as_index=False)["valor"]
         .sum().sort_values(["ano", "mes"])
     )
-    gasto_mensal["periodo"] = (
-        gasto_mensal["mes"].map(MESES_NOMES) + "/" + gasto_mensal["ano"].astype(int).astype(str)
+    gasto_mensal_sec["periodo"] = (
+        gasto_mensal_sec["mes"].map(MESES_NOMES)
+        + "/" + gasto_mensal_sec["ano"].astype(int).astype(str)
+    )
+    # Ordem dos períodos para o eixo X
+    ordem_periodos = (
+        gasto_mensal_sec[["ano", "mes", "periodo"]]
+        .drop_duplicates().sort_values(["ano", "mes"])["periodo"].tolist()
+    )
+    total_por_periodo = (
+        gasto_mensal_sec.groupby("periodo")["valor"].sum().reset_index()
     )
 
-    fig_mensal = px.bar(
-        gasto_mensal, x="periodo", y="valor",
-        text_auto=".3s",
-        color_discrete_sequence=["#1f77b4"],
+    fig_evo = px.bar(
+        gasto_mensal_sec, x="periodo", y="valor", color="secretaria",
+        barmode="stack",
+        category_orders={"periodo": ordem_periodos},
+        color_discrete_sequence=CORES_SEC,
+        custom_data=["secretaria"],
     )
-    fig_mensal.update_traces(texttemplate="R$ %{y:.3s}", textposition="outside")
-    fig_mensal.update_layout(
+    # Linha do total por mês
+    fig_evo.add_scatter(
+        x=total_por_periodo["periodo"],
+        y=total_por_periodo["valor"],
+        mode="lines+markers",
+        name="Total",
+        line=dict(color="#333333", width=2, dash="dot"),
+        marker=dict(size=6),
+    )
+    fig_evo.update_layout(
         xaxis_title="", yaxis_title="Valor (R$)",
-        plot_bgcolor="white", height=400,
-        yaxis=dict(tickformat=",.0f"),
+        legend_title="Secretaria",
+        plot_bgcolor="white",
+        height=420,
+        yaxis=dict(tickformat=",.0f", gridcolor="#eeeeee"),
+        xaxis=dict(categoryorder="array", categoryarray=ordem_periodos),
+        legend=dict(orientation="h", y=-0.2),
+        margin=dict(b=80),
     )
-    st.plotly_chart(fig_mensal, use_container_width=True)
+    fig_evo.update_traces(
+        hovertemplate="<b>%{customdata[0]}</b><br>%{x}<br>R$ %{y:,.2f}<extra></extra>",
+        selector=dict(type="bar"),
+    )
+    st.plotly_chart(fig_evo, use_container_width=True)
 
-    c1, c2 = st.columns(2)
+    st.markdown("---")
 
-    with c1:
-        st.subheader("Distribuição por Secretaria")
-        sec_total = (
+    # ── Linha 2: Secretaria (barra horiz.) + Fornecedores (treemap) ──
+    col_l2a, col_l2b = st.columns([1, 1])
+
+    with col_l2a:
+        st.markdown("### Gasto por Secretaria")
+        sec_tot = (
             base.groupby("secretaria", as_index=False)["valor"]
+            .sum().sort_values("valor", ascending=True)   # crescente p/ barras horizontais
+        )
+        sec_tot["pct"] = sec_tot["valor"] / sec_tot["valor"].sum() * 100
+        sec_tot["label"] = sec_tot.apply(
+            lambda r: f"{formatar_mi(r['valor'])} ({r['pct']:.1f}%)", axis=1
+        )
+        fig_sec_h = px.bar(
+            sec_tot, x="valor", y="secretaria", orientation="h",
+            color="secretaria",
+            color_discrete_sequence=CORES_SEC,
+            text="label",
+        )
+        fig_sec_h.update_traces(textposition="inside", insidetextanchor="middle")
+        fig_sec_h.update_layout(
+            xaxis_title="", yaxis_title="",
+            plot_bgcolor="white",
+            showlegend=False,
+            height=360,
+            xaxis=dict(showticklabels=False, showgrid=False),
+            yaxis=dict(tickfont=dict(size=13)),
+            margin=dict(l=10, r=10),
+        )
+        st.plotly_chart(fig_sec_h, use_container_width=True)
+
+    with col_l2b:
+        st.markdown("### Top Fornecedores")
+        top20 = (
+            base.groupby(["favorecido", "secretaria"], as_index=False)["valor"]
             .sum().sort_values("valor", ascending=False)
         )
-        fig_sec = px.pie(
-            sec_total, names="secretaria", values="valor",
-            hole=0.4, color_discrete_sequence=px.colors.qualitative.Set2,
-        )
-        fig_sec.update_traces(textinfo="label+percent", hovertemplate="%{label}<br>R$ %{value:,.2f}")
-        st.plotly_chart(fig_sec, use_container_width=True)
+        top20 = top20[top20["favorecido"].str.strip() != ""].head(20)
+        top20["valor_fmt"] = top20["valor"].apply(formatar_mi)
 
-    with c2:
-        st.subheader("Gasto por Secretaria × Mês")
-        sec_mes = (
+        fig_top_forn = px.bar(
+            top20.sort_values("valor"),
+            x="valor", y="favorecido", orientation="h",
+            color="secretaria",
+            color_discrete_sequence=CORES_SEC,
+            text="valor_fmt",
+        )
+        fig_top_forn.update_traces(textposition="inside", insidetextanchor="middle")
+        fig_top_forn.update_layout(
+            xaxis_title="", yaxis_title="",
+            plot_bgcolor="white",
+            legend_title="Secretaria",
+            height=560,
+            xaxis=dict(showticklabels=False, showgrid=False),
+            yaxis=dict(tickfont=dict(size=10)),
+            legend=dict(orientation="h", y=-0.15),
+            margin=dict(l=10, r=10, b=60),
+        )
+        st.plotly_chart(fig_top_forn, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Linha 3: Treemap secretaria → recurso + Top programas ──────
+    col_l3a, col_l3b = st.columns([1, 1])
+
+    with col_l3a:
+        st.markdown("### Gasto por Programa/Recurso (Top 20)")
+        top_rec = (
+            base.groupby(["secretaria", "recurso"], as_index=False)["valor"]
+            .sum().sort_values("valor", ascending=False)
+        )
+        top_rec = top_rec[top_rec["recurso"].str.strip() != ""].head(20)
+        top_rec["valor_fmt"] = top_rec["valor"].apply(formatar_mi)
+
+        fig_rec_bar = px.bar(
+            top_rec.sort_values("valor"),
+            x="valor", y="recurso", orientation="h",
+            color="secretaria",
+            color_discrete_sequence=CORES_SEC,
+            text="valor_fmt",
+        )
+        fig_rec_bar.update_traces(textposition="inside", insidetextanchor="middle")
+        fig_rec_bar.update_layout(
+            xaxis_title="", yaxis_title="",
+            plot_bgcolor="white",
+            legend_title="Secretaria",
+            height=520,
+            xaxis=dict(showticklabels=False, showgrid=False),
+            yaxis=dict(tickfont=dict(size=10)),
+            legend=dict(orientation="h", y=-0.18),
+            margin=dict(l=10, r=10, b=60),
+        )
+        st.plotly_chart(fig_rec_bar, use_container_width=True)
+
+    with col_l3b:
+        st.markdown("### Mapa de calor — Secretaria × Mês")
+        heat_data = (
             base.groupby(["secretaria", "mes"], as_index=False)["valor"].sum()
         )
-        sec_mes["mes_nome"] = sec_mes["mes"].map(MESES_NOMES)
-        fig_smes = px.bar(
-            sec_mes.sort_values("mes"),
-            x="mes_nome", y="valor", color="secretaria",
-            barmode="stack",
-            color_discrete_sequence=px.colors.qualitative.Set2,
+        heat_pivot = heat_data.pivot(index="secretaria", columns="mes", values="valor").fillna(0)
+        heat_pivot.columns = [MESES_FULL.get(c, str(c)) for c in heat_pivot.columns]
+
+        fig_heat = go.Figure(data=go.Heatmap(
+            z=heat_pivot.values,
+            x=heat_pivot.columns.tolist(),
+            y=heat_pivot.index.tolist(),
+            colorscale="Blues",
+            text=[[formatar_mi(v) for v in row] for row in heat_pivot.values],
+            texttemplate="%{text}",
+            hovertemplate="<b>%{y}</b><br>%{x}<br>R$ %{z:,.2f}<extra></extra>",
+        ))
+        fig_heat.update_layout(
+            xaxis_title="", yaxis_title="",
+            height=400,
+            margin=dict(l=10, r=10),
+            font=dict(size=10),
         )
-        fig_smes.update_layout(
-            xaxis_title="Mês", yaxis_title="Valor (R$)", legend_title="Secretaria",
-            plot_bgcolor="white", height=400,
-        )
-        st.plotly_chart(fig_smes, use_container_width=True)
+        st.plotly_chart(fig_heat, use_container_width=True)
 
 
 # =================================================================
 # ABA 2 — POR SECRETARIA
 # =================================================================
 with tab_sec:
-    secretarias_presentes = sorted(base["secretaria"].dropna().unique())
+    secretarias_presentes = sorted(
+        s for s in base["secretaria"].dropna().unique() if str(s).strip()
+    )
 
     if not secretarias_presentes:
         st.info("Nenhuma secretaria no filtro atual.")
     else:
+        # ── Visão consolidada de todas as secretarias ──────────────
+        st.markdown("### Todas as Secretarias — Panorama")
+
+        sec_resumo = (
+            base.groupby("secretaria", as_index=False)
+            .agg(total=("valor", "sum"), lancamentos=("valor", "count"),
+                 fornecedores=("favorecido", "nunique"))
+            .sort_values("total", ascending=False)
+        )
+        sec_resumo["total_fmt"] = sec_resumo["total"].apply(formatar_mi)
+        sec_resumo["pct"] = (sec_resumo["total"] / sec_resumo["total"].sum() * 100).round(1)
+
+        # Cards por secretaria
+        n_cols = min(len(secretarias_presentes), 3)
+        cols_cards = st.columns(n_cols)
+        for i, (_, row) in enumerate(sec_resumo.iterrows()):
+            with cols_cards[i % n_cols]:
+                st.metric(
+                    label=row["secretaria"],
+                    value=row["total_fmt"],
+                    delta=f'{row["pct"]}% do total | {row["fornecedores"]} fornecedores',
+                    delta_color="off",
+                )
+
+        st.markdown("---")
+
+        # ── Detalhe por secretaria selecionada ──────────────────────
         sec_escolhida = st.selectbox(
-            "Selecione a Secretaria",
+            "Detalhes de uma secretaria",
             secretarias_presentes,
             key="sec_detalhe",
         )
         base_sec = base[base["secretaria"] == sec_escolhida]
 
-        # KPIs da secretaria
-        s1, s2, s3 = st.columns(3)
+        s1, s2, s3, s4 = st.columns(4)
         s1.metric("Total", formatar_mi(base_sec["valor"].sum()))
         s2.metric("Lançamentos", f'{len(base_sec):,}'.replace(",", "."))
-        s3.metric("Favorecidos únicos", f'{base_sec["favorecido"].nunique():,}'.replace(",", "."))
+        s3.metric("Fornecedores únicos", f'{base_sec["favorecido"].nunique():,}'.replace(",", "."))
+        s4.metric("Recursos (fontes)", f'{base_sec["recurso"].nunique():,}'.replace(",", "."))
 
-        c1, c2 = st.columns(2)
+        c1, c2 = st.columns([1, 1])
 
         with c1:
-            st.subheader("Gasto mensal — " + sec_escolhida)
+            st.markdown(f"**Evolução mensal — {sec_escolhida}**")
             mes_sec = (
                 base_sec.groupby(["ano", "mes"], as_index=False)["valor"]
                 .sum().sort_values(["ano", "mes"])
             )
             mes_sec["periodo"] = mes_sec["mes"].map(MESES_NOMES) + "/" + mes_sec["ano"].astype(int).astype(str)
-            fig_ms = px.bar(mes_sec, x="periodo", y="valor", text_auto=".3s")
-            fig_ms.update_layout(xaxis_title="", yaxis_title="R$", plot_bgcolor="white")
+            fig_ms = px.bar(
+                mes_sec, x="periodo", y="valor",
+                text=mes_sec["valor"].apply(formatar_mi),
+                color_discrete_sequence=["#2196F3"],
+            )
+            fig_ms.update_traces(textposition="outside")
+            fig_ms.update_layout(
+                xaxis_title="", yaxis_title="R$", plot_bgcolor="white",
+                height=340, yaxis=dict(showticklabels=False, showgrid=False),
+                margin=dict(t=30, b=10),
+            )
             st.plotly_chart(fig_ms, use_container_width=True)
 
         with c2:
-            st.subheader("Distribuição por Recurso (fonte)")
+            st.markdown(f"**Recursos (fontes) — {sec_escolhida}**")
             rec_sec = (
                 base_sec.groupby("recurso", as_index=False)["valor"]
-                .sum().sort_values("valor", ascending=False)
+                .sum().sort_values("valor", ascending=True)
             )
-            fig_rec = px.pie(
-                rec_sec.head(12), names="recurso", values="valor", hole=0.3,
+            rec_sec = rec_sec[rec_sec["recurso"].str.strip() != ""].tail(12)
+            rec_sec["valor_fmt"] = rec_sec["valor"].apply(formatar_mi)
+            fig_rec = px.bar(
+                rec_sec, x="valor", y="recurso", orientation="h",
+                text="valor_fmt",
+                color_discrete_sequence=["#4CAF50"],
             )
-            fig_rec.update_traces(textinfo="label+percent")
+            fig_rec.update_traces(textposition="inside", insidetextanchor="middle")
+            fig_rec.update_layout(
+                xaxis_title="", yaxis_title="", plot_bgcolor="white",
+                height=340,
+                xaxis=dict(showticklabels=False, showgrid=False),
+                margin=dict(t=30, b=10),
+            )
             st.plotly_chart(fig_rec, use_container_width=True)
 
-        st.subheader("Top favorecidos — " + sec_escolhida)
+        st.markdown(f"**Top 20 Fornecedores — {sec_escolhida}**")
         top_fav_sec = (
             base_sec.groupby("favorecido", as_index=False)["valor"]
-            .sum().sort_values("valor", ascending=False).head(15)
+            .sum().sort_values("valor", ascending=True)
         )
+        top_fav_sec = top_fav_sec[top_fav_sec["favorecido"].str.strip() != ""].tail(20)
+        top_fav_sec["valor_fmt"] = top_fav_sec["valor"].apply(formatar_mi)
+
         fig_fav = px.bar(
-            top_fav_sec, x="valor", y="favorecido", orientation="h", text_auto=".3s",
+            top_fav_sec, x="valor", y="favorecido", orientation="h",
+            text="valor_fmt",
+            color_discrete_sequence=["#FF9800"],
         )
+        fig_fav.update_traces(textposition="inside", insidetextanchor="middle")
         fig_fav.update_layout(
             yaxis={"categoryorder": "total ascending"},
-            xaxis_title="Valor (R$)", yaxis_title="",
-            plot_bgcolor="white", height=500,
+            xaxis_title="", yaxis_title="",
+            plot_bgcolor="white", height=520,
+            xaxis=dict(showticklabels=False, showgrid=False),
+            margin=dict(l=10, r=10),
         )
         st.plotly_chart(fig_fav, use_container_width=True)
 
-        st.subheader("Tabela de favorecidos")
+        st.markdown("**Tabela completa de fornecedores**")
         res_sec = (
             base_sec.groupby("favorecido", as_index=False)
             .agg(qtd=("valor", "count"), total=("valor", "sum"))
@@ -323,13 +498,13 @@ with tab_sec:
         res_sec["total_fmt"] = res_sec["total"].apply(formatar_brl)
         st.dataframe(
             res_sec[["favorecido", "qtd", "total_fmt"]].rename(
-                columns={"favorecido": "Favorecido", "qtd": "Qtd", "total_fmt": "Total"}
+                columns={"favorecido": "Fornecedor/Favorecido", "qtd": "Qtd. Lançamentos", "total_fmt": "Total"}
             ),
             hide_index=True, use_container_width=True,
         )
 
         st.download_button(
-            "📥 Exportar secretaria filtrada",
+            f"📥 Exportar {sec_escolhida}",
             data=excel_download(base_sec),
             file_name=f"despesas_{sec_escolhida.lower().replace('/', '_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
