@@ -1,6 +1,7 @@
 """
 app/db.py
-Conexão com o MySQL via SQLAlchemy + python-dotenv.
+Conexão com MySQL via SQLAlchemy.
+Suporta: .env local (desenvolvimento) e st.secrets (Streamlit Cloud).
 """
 import os
 from pathlib import Path
@@ -8,22 +9,30 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 import pandas as pd
 
-# Carrega .env da raiz do projeto
+# Carrega .env local (ignorado silenciosamente se não existir)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+
+def _cfg(key: str, default: str = "") -> str:
+    """Lê variável do st.secrets (cloud) ou os.environ (local/.env)."""
+    try:
+        import streamlit as st
+        return str(st.secrets.get(key, os.getenv(key, default)))
+    except Exception:
+        return os.getenv(key, default)
 
 
 def _get_engine():
     from urllib.parse import quote_plus
-    host = os.getenv("DB_HOST", "localhost")
-    port = os.getenv("DB_PORT", "3306")
-    db   = os.getenv("DB_NAME", "gastos_prefeitura")
-    user = os.getenv("DB_USER", "root")
-    pwd  = quote_plus(os.getenv("DB_PASSWORD", ""))   # codifica @ e caracteres especiais
+    host = _cfg("DB_HOST", "localhost")
+    port = _cfg("DB_PORT", "3306")
+    db   = _cfg("DB_NAME", "gastos_prefeitura")
+    user = _cfg("DB_USER", "root")
+    pwd  = quote_plus(_cfg("DB_PASSWORD", ""))
     url  = f"mysql+mysqlconnector://{user}:{pwd}@{host}:{port}/{db}?charset=utf8mb4"
     return create_engine(url, pool_pre_ping=True)
 
 
-# Engine singleton (reutilizado entre chamadas)
 _engine = None
 
 
@@ -35,14 +44,14 @@ def get_engine():
 
 
 def get_connection():
-    """Retorna conexão raw (para INSERT/UPDATE no ETL)."""
+    """Conexão raw para o ETL (INSERT/UPDATE)."""
     import mysql.connector
     return mysql.connector.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", 3306)),
-        database=os.getenv("DB_NAME", "gastos_prefeitura"),
-        user=os.getenv("DB_USER", "root"),
-        password=os.getenv("DB_PASSWORD", ""),
+        host=_cfg("DB_HOST", "localhost"),
+        port=int(_cfg("DB_PORT", "3306")),
+        database=_cfg("DB_NAME", "gastos_prefeitura"),
+        user=_cfg("DB_USER", "root"),
+        password=_cfg("DB_PASSWORD", ""),
         charset="utf8mb4",
     )
 
