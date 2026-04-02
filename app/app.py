@@ -293,15 +293,23 @@ with tab_geral:
 
     with col2a:
         st.markdown("#### Top 15 Fornecedores")
-        top15 = (
-            base.groupby(["favorecido", "secretaria"], as_index=False)["valor"]
-            .sum()
+        # Agrupa APENAS por favorecido para obter o total real (sem duplicar por secretaria)
+        top15_total = (
+            base[base["favorecido"].str.strip() != ""]
+            .groupby("favorecido", as_index=False)["valor"].sum()
+            .sort_values("valor", ascending=False).head(15)
         )
-        top15 = (top15[top15["favorecido"].str.strip() != ""]
-                 .sort_values("valor", ascending=True).tail(15))
+        # Pega secretaria predominante de cada fornecedor (maior valor)
+        sec_pred = (
+            base.groupby(["favorecido", "secretaria"], as_index=False)["valor"].sum()
+            .sort_values("valor", ascending=False)
+            .drop_duplicates("favorecido")[["favorecido", "secretaria"]]
+        )
+        top15 = top15_total.merge(sec_pred, on="favorecido", how="left")
         top15["label"] = top15["valor"].apply(formatar_mi)
-        # Trunca nomes longos demais
         top15["nome_curto"] = top15["favorecido"].str[:45]
+        # Ordena ascending para plotly colocar o maior no topo
+        top15 = top15.sort_values("valor", ascending=True)
 
         fig_forn = px.bar(
             top15, x="valor", y="nome_curto", orientation="h",
@@ -319,7 +327,8 @@ with tab_geral:
     with col2b:
         st.markdown("#### Gasto por Secretaria")
         sec_tot = (
-            base.groupby("secretaria", as_index=False)["valor"]
+            base[~base["secretaria"].str.contains("INTERNA|TRANSFER", na=False, case=False)]
+            .groupby("secretaria", as_index=False)["valor"]
             .sum().sort_values("valor", ascending=True)
         )
         sec_tot["pct"] = sec_tot["valor"] / sec_tot["valor"].sum() * 100
