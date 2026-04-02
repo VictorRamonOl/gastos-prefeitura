@@ -1,0 +1,18 @@
+[server]
+# Porta padrão — o Dockerfile/nginx apontam para cá
+port = 8501
+# Aceita conexões de qualquer IP (necessário no VPS)
+address = "0.0.0.0"
+headless = true
+# Manter CORS e XSRF ativos (Streamlit gerencia; nginx faz proxy transparente)
+enableCORS = true
+enableXsrfProtection = true
+# Limite de upload de arquivos (MB)
+maxUploadSize = 50
+
+[browser]
+# Não envia métricas de uso para a Streamlit
+gatherUsageStats = false
+# URL pública — substitua pelo seu domínio real
+serverAddress = "localhost"
+

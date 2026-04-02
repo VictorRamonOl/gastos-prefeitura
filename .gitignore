@@ -25,3 +25,13 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+scripts/etl_railway.log
+
+# SSL certs (gerados no VPS)
+ssl/
+
+# Docker
+.dockerignore

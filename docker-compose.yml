@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  # ── Streamlit App ───────────────────────────────────────────────
+  app:
+    build: .
+    container_name: gastos_prefeitura_app
+    restart: unless-stopped
+    env_file: .env               # DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+    ports:
+      - "8501:8501"              # acesso direto; nginx faz proxy para 80/443
+    volumes:
+      - ./data/uploads:/app/data/uploads   # persiste os xlsx fora do container
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Nginx Reverse Proxy ─────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: gastos_prefeitura_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro      # coloque seus certificados aqui (ou use Certbot)
+    depends_on:
+      - app
+    networks:
+      - app_net
+
+networks:
+  app_net:
+    driver: bridge

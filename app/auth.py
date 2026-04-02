@@ -10,47 +10,49 @@ from app.db import get_connection
 
 
 # -----------------------------------------------------------------
-# Funções de banco
+# Funções de banco — com fechamento garantido via try/finally
 # -----------------------------------------------------------------
 def _buscar_usuario(username: str) -> dict | None:
     conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute(
-        "SELECT id, username, nome, senha_hash, perfil, ativo FROM usuarios WHERE username = %s",
-        (username,),
-    )
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return row
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, username, nome, senha_hash, perfil, ativo FROM usuarios WHERE username = %s",
+            (username,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return row
+    finally:
+        conn.close()
 
 
 def _registrar_acesso(user_id: int):
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE usuarios SET ultimo_acesso = %s WHERE id = %s",
-        (datetime.now(), user_id),
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE usuarios SET ultimo_acesso = %s WHERE id = %s",
+            (datetime.now(), user_id),
+        )
+        conn.commit()
+        cursor.close()
+    finally:
+        conn.close()
 
 
 # -----------------------------------------------------------------
 # Funções públicas
 # -----------------------------------------------------------------
 def verificar_login(username: str, senha: str) -> dict | None:
-    """
-    Verifica credenciais. Retorna dict com dados do usuário ou None.
-    """
+    """Verifica credenciais. Retorna dict com dados do usuário ou None."""
     if not username or not senha:
         return None
     usuario = _buscar_usuario(username.strip().lower())
     if not usuario or not usuario["ativo"]:
         return None
     senha_bytes = senha.encode("utf-8")
-    hash_bytes = usuario["senha_hash"].encode("utf-8")
+    hash_bytes  = usuario["senha_hash"].encode("utf-8")
     if bcrypt.checkpw(senha_bytes, hash_bytes):
         _registrar_acesso(usuario["id"])
         return usuario
@@ -66,10 +68,7 @@ def hash_senha(senha: str) -> str:
 # Controle de sessão Streamlit
 # -----------------------------------------------------------------
 def login_requerido():
-    """
-    Exibe tela de login se o usuário não estiver autenticado.
-    Para o app inteiro se não logado.
-    """
+    """Para o app inteiro se o usuário não estiver autenticado."""
     if "usuario" not in st.session_state:
         st.session_state["usuario"] = None
 
@@ -85,11 +84,15 @@ def _tela_login():
         st.markdown("---")
         with st.form("form_login"):
             username = st.text_input("Usuário", placeholder="seu.usuario")
-            senha = st.text_input("Senha", type="password")
-            entrar = st.form_submit_button("Entrar", use_container_width=True)
+            senha    = st.text_input("Senha", type="password")
+            entrar   = st.form_submit_button("Entrar", use_container_width=True)
 
         if entrar:
-            usuario = verificar_login(username, senha)
+            try:
+                usuario = verificar_login(username, senha)
+            except Exception as e:
+                st.error(f"Erro ao conectar ao banco: {e}")
+                return
             if usuario:
                 st.session_state["usuario"] = usuario
                 st.rerun()
