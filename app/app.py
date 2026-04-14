@@ -27,6 +27,12 @@ from app.views import geral, secretaria, fornecedor, rankings, base_detalhada, a
 # -----------------------------------------------------------------
 def render():
     """Renderiza o dashboard de Despesas. Chamado pelo Portal Central."""
+    # Esconde a navegação automática do Streamlit multipage na sidebar
+    st.markdown(
+        "<style>[data-testid='stSidebarNav']{display:none!important}</style>",
+        unsafe_allow_html=True,
+    )
+
     # Header
     usuario = usuario_atual()
     col_h1, col_h2 = st.columns([7, 1])
