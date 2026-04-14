@@ -203,8 +203,12 @@ def extrair_favorecido(descricao: str) -> str:
 # Detecção de estrutura da aba
 # -----------------------------------------------------------------
 def _eh_cabecalho(df_raw: pd.DataFrame, i: int) -> bool:
+    """
+    Linha é cabeçalho se contém as palavras DATA, RECURSO e CONTA.
+    VALOR é opcional — algumas abas têm espaço/vazio nessa célula.
+    """
     linha = " | ".join(norm_upper(x) for x in df_raw.iloc[i].tolist())
-    return all(kw in linha for kw in ("DATA", "RECURSO", "CONTA", "VALOR"))
+    return all(kw in linha for kw in ("DATA", "RECURSO", "CONTA"))
 
 
 def detectar_linha_cabecalho(df_raw: pd.DataFrame) -> int | None:
@@ -234,6 +238,12 @@ def localizar_colunas(cabecalho: list) -> tuple:
             idx_conta = idx
         elif idx_valor is None and "VALOR" in txt:
             idx_valor = idx
+    # Fallback: se VALOR não foi encontrado (célula vazia/espaço),
+    # usa a última coluna não-vazia ou simplesmente a última coluna.
+    if idx_valor is None and idx_conta is not None:
+        ultimas = [i for i, x in enumerate(cabecalho) if i > idx_conta]
+        if ultimas:
+            idx_valor = ultimas[-1]
     return idx_ord, idx_data, idx_recurso, idx_conta, idx_valor
 
 
