@@ -6,10 +6,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-from app.helpers import MESES_NOMES, formatar_brl, safe_periodo
+from app.helpers import MESES_NOMES, formatar_brl, safe_periodo, sem_transferencias
 
 
 def render(base: pd.DataFrame):
+    base = sem_transferencias(base)
+
     col_r1, col_r2 = st.columns(2)
 
     with col_r1:

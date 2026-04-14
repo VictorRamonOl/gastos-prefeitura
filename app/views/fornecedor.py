@@ -9,12 +9,14 @@ import plotly.express as px
 from app.helpers import (
     MESES_NOMES, MESES_FULL,
     formatar_brl, formatar_mi, formatar_data, excel_download,
-    safe_periodo,
+    safe_periodo, sem_transferencias,
 )
 
 
 def render(base: pd.DataFrame):
     st.subheader("🏢 Análise por Fornecedor")
+
+    base = sem_transferencias(base)
 
     rank_fav = (
         base.groupby("favorecido", as_index=False)["valor"]

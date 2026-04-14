@@ -25,6 +25,24 @@ MESES_FULL = {
     11: "Novembro", 12: "Dezembro",
 }
 
+# -----------------------------------------------------------------
+# Favorecidos excluídos de rankings e análise por fornecedor
+# (contam nos totais gerais, mas não são fornecedores reais)
+# -----------------------------------------------------------------
+_EXCLUIR_FAVORECIDO = [
+    "transferencia entre contas",
+    "transferência entre contas",
+]
+
+def sem_transferencias(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove linhas cujo favorecido é transferência entre contas.
+    Usar apenas em views de fornecedor/rankings — não nos totais."""
+    mask = df["favorecido"].str.lower().str.contains(
+        "|".join(_EXCLUIR_FAVORECIDO), na=False
+    )
+    return df[~mask]
+
+
 # Paleta fixa por secretaria — consistente em todos os gráficos
 CORES_FIXAS = [
     "#1565C0", "#E65100", "#2E7D32", "#6A1B9A",
