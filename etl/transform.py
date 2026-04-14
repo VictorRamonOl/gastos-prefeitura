@@ -164,6 +164,35 @@ def extrair_mes_ano_aba(nome_aba: str) -> tuple[str | None, int | None]:
     return mes, ano
 
 
+# -----------------------------------------------------------------
+# Normalização canônica de nomes de secretaria
+# Centraliza todas as variações para um único nome exibido no dashboard.
+# -----------------------------------------------------------------
+_CANONICAL_SECRETARIA: dict[str, str] = {
+    # Assistência Social
+    "ASSIST SOCIAL":      "ASSISTÊNCIA SOCIAL",
+    "ASSIST. SOCIAL":     "ASSISTÊNCIA SOCIAL",
+    "ASSISTENCIA SOCIAL": "ASSISTÊNCIA SOCIAL",
+    "SEMAS":              "ASSISTÊNCIA SOCIAL",
+    # Administração / RP
+    "ADMINISTRACAO/RP":   "ADMINISTRAÇÃO/RP",
+    "ADMIN/RP":           "ADMINISTRAÇÃO/RP",
+    # Educação
+    "EDUCACAO":           "EDUCAÇÃO",
+    # Saúde
+    "SAUDE":              "SAÚDE",
+    # Convênios
+    "CONVENIOS":          "CONVÊNIOS",
+    "CONV NIOS":          "CONVÊNIOS",
+}
+
+
+def normalizar_secretaria(nome: str) -> str:
+    """Retorna o nome canônico da secretaria, sem variações ortográficas."""
+    chave = re.sub(r"\s+", " ", str(nome).strip().upper())
+    return _CANONICAL_SECRETARIA.get(chave, nome)
+
+
 def extrair_categoria_cabecalho(cabecalho_desc: str) -> str | None:
     """
     Extrai a secretaria/categoria a partir do nome da coluna de descrição.
@@ -175,7 +204,7 @@ def extrair_categoria_cabecalho(cabecalho_desc: str) -> str | None:
     txt = re.sub(r"FORNECEDOR[/\s]*", "", txt)
     txt = re.sub(r"DESPESAS?\s+PAGAS?\s*", "", txt).strip()
     if txt:
-        return txt
+        return normalizar_secretaria(txt)
     return None
 
 
@@ -288,7 +317,9 @@ def _processar_secao(df_secao: pd.DataFrame, cabecalho: list,
         ano  = data.year  if pd.notna(data) else ano_aba
         mes  = data.month if pd.notna(data) else mes_num_aba
 
-        secretaria = categoria_cabecalho if categoria_cabecalho else mapear_secretaria(recurso)
+        secretaria = normalizar_secretaria(
+            categoria_cabecalho if categoria_cabecalho else mapear_secretaria(recurso)
+        )
 
         linhas.append({
             "DATA": data, "ANO": ano, "MES": mes,
