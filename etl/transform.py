@@ -77,16 +77,61 @@ def norm_upper(txt) -> str:
 
 
 def limpar_valor(valor) -> float:
+    """
+    Converte texto monetário em float, tratando ambos os formatos:
+      - Brasileiro: ponto = milhar, vírgula = decimal  (ex: 1.234,56 → 1234.56)
+      - US/Excel:   vírgula = milhar, ponto = decimal  (ex: 1,234.56 → 1234.56)
+      - Ambíguo:    só ponto com 3 casas               (ex: 1.500    → 1500.0)
+      - Ambíguo:    só ponto com 1-2 casas             (ex: 1234.50  → 1234.5)
+    """
     if pd.isna(valor):
         return 0.0
     if isinstance(valor, (int, float)):
-        return float(valor)
-    txt = str(valor).strip().replace("R$", "").replace("r$", "").strip()
-    if "," in txt:
-        txt = txt.replace(".", "").replace(",", ".")
+        return max(float(valor), 0.0)
+
+    txt = str(valor).strip()
+    txt = re.sub(r"[Rr]\$\s*", "", txt).strip()
+    if not txt:
+        return 0.0
+
+    n_pontos   = txt.count(".")
+    n_virgulas = txt.count(",")
+
+    if n_pontos > 0 and n_virgulas > 0:
+        # Ambos presentes → o separador que vem por último é o decimal
+        if txt.rfind(",") > txt.rfind("."):
+            # Formato BR: 1.234,56 ou 1.234.567,89
+            txt = txt.replace(".", "").replace(",", ".")
+        else:
+            # Formato US: 1,234.56
+            txt = txt.replace(",", "")
+
+    elif n_virgulas > 0:
+        # Só vírgulas
+        partes = txt.split(",")
+        digitos_apos = re.sub(r"\D", "", partes[-1])
+        if len(partes) == 2 and len(digitos_apos) <= 2:
+            # Decimal: 1234,56  →  1234.56
+            txt = txt.replace(",", ".")
+        else:
+            # Milhar: 1,234  ou  1,234,567
+            txt = txt.replace(",", "")
+
+    elif n_pontos > 0:
+        # Só pontos
+        partes = txt.split(".")
+        digitos_apos = re.sub(r"\D", "", partes[-1])
+        if n_pontos == 1 and len(digitos_apos) <= 2:
+            # Decimal US/Excel: 1234.50  →  mantém
+            pass
+        else:
+            # Milhar BR: 1.500  ou  1.234.567  →  remove pontos
+            txt = txt.replace(".", "")
+
     txt = re.sub(r"[^0-9.\-]", "", txt)
     try:
-        return float(txt) if txt else 0.0
+        v = float(txt) if txt else 0.0
+        return max(v, 0.0)
     except ValueError:
         return 0.0
 
@@ -272,7 +317,25 @@ def transformar_aba(df_raw: pd.DataFrame, nome_aba: str) -> pd.DataFrame:
     df["VALOR"] = pd.to_numeric(df["VALOR"], errors="coerce").fillna(0)
     df["DATA"]  = pd.to_datetime(df["DATA"], errors="coerce")
 
-    return df[df["VALOR"] > 0].copy()
+    df = df[df["VALOR"] > 0].copy()
+    _alertar_valores_suspeitos(df, nome_aba)
+    return df
+
+
+# -----------------------------------------------------------------
+# Validação pós-transformação
+# -----------------------------------------------------------------
+LIMITE_ALERTA_VALOR = 5_000_000  # R$ 5 milhões — ajuste conforme o município
+
+
+def _alertar_valores_suspeitos(df: pd.DataFrame, nome_aba: str) -> None:
+    """Imprime aviso para linhas com valor acima do limite ou zerado inesperadamente."""
+    altos = df[df["VALOR"] > LIMITE_ALERTA_VALOR]
+    for _, row in altos.iterrows():
+        print(
+            f"  [AVISO] Valor muito alto detectado em '{nome_aba}': "
+            f"R$ {row['VALOR']:,.2f} | {str(row.get('DESCRICAO',''))[:80]}"
+        )
 
 
 # -----------------------------------------------------------------
