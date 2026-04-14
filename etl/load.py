@@ -87,6 +87,32 @@ def _row_tuple(row: pd.Series) -> tuple:
 # -----------------------------------------------------------------
 # Carga principal
 # -----------------------------------------------------------------
+def _limpar_dados_anteriores(arquivo_nome: str) -> int:
+    """
+    Remove do banco todos os registros de importações anteriores do mesmo arquivo
+    cujo hash ERA diferente (arquivo foi atualizado).
+    Isso evita acúmulo de dados antigos quando o Excel é editado e reimportado.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM pagamentos WHERE arquivo_origem = %s",
+            (arquivo_nome,),
+        )
+        removidos = cursor.rowcount
+        conn.commit()
+        if removidos:
+            print(f"  [load] {removidos} registros anteriores de '{arquivo_nome}' removidos (arquivo atualizado).")
+        return removidos
+    finally:
+        try:
+            cursor.close()
+        except Exception:
+            pass
+        conn.close()
+
+
 def carregar(df: pd.DataFrame, arquivo_nome: str = "", hash_arq: str = "") -> dict:
     if df.empty:
         print("  [load] DataFrame vazio.")
@@ -94,6 +120,10 @@ def carregar(df: pd.DataFrame, arquivo_nome: str = "", hash_arq: str = "") -> di
 
     df = df.copy()
     df["hash_linha"] = df.apply(_hash_linha, axis=1)
+
+    # Limpa registros antigos do mesmo arquivo antes de inserir os novos.
+    # Garante que correções no Excel substituam os dados, não se acumulem.
+    _limpar_dados_anteriores(arquivo_nome)
 
     inseridos = duplicados = erros = 0
 
