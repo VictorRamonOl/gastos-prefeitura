@@ -1,6 +1,11 @@
 """
 app/views/fornecedor.py
-Aba "Por Fornecedor" — análise detalhada de um fornecedor específico.
+Aba "Por Fornecedor" — análise detalhada de um OU mais fornecedores.
+
+Suporta multi-seleção: o usuário pode escolher vários fornecedores diferentes
+(ex: "LM" e "L M" são tratados como cadastros distintos, sem consolidação).
+Quando há um único selecionado, mostra a visão individual completa.
+Quando há mais de um, mostra a visão comparativa.
 """
 import streamlit as st
 import pandas as pd
@@ -33,16 +38,38 @@ def render(base: pd.DataFrame):
     )
     label_map = dict(zip(rank_fav["favorecido"], rank_fav["label"]))
 
-    forn_sel = st.selectbox(
-        "Selecione o fornecedor",
-        rank_fav["favorecido"].tolist(),
-        format_func=lambda f: label_map.get(f, f),
-        key="forn_sel",
+    section_title("Selecionar fornecedor(es)")
+    st.caption(
+        "Você pode escolher **um ou vários** fornecedores. "
+        "Nomes parecidos (ex: `LM` e `L M`) são mantidos separados — "
+        "são cadastros diferentes com CNPJs distintos."
     )
 
-    base_forn = base[base["favorecido"] == forn_sel]
+    forn_sel: list[str] = st.multiselect(
+        "Fornecedores",
+        rank_fav["favorecido"].tolist(),
+        default=[rank_fav["favorecido"].iloc[0]] if not rank_fav.empty else [],
+        format_func=lambda f: label_map.get(f, f),
+        key="forn_sel",
+        placeholder="Digite ou escolha um ou mais fornecedores…",
+    )
 
-    # ── KPIs ──────────────────────────────────────────────────────
+    if not forn_sel:
+        st.info("Selecione pelo menos um fornecedor acima.")
+        return
+
+    base_forn = base[base["favorecido"].isin(forn_sel)]
+
+    if len(forn_sel) == 1:
+        _render_individual(base_forn, forn_sel[0])
+    else:
+        _render_comparativo(base_forn, forn_sel)
+
+
+# ===================================================================
+# VISÃO INDIVIDUAL — apenas 1 fornecedor selecionado
+# ===================================================================
+def _render_individual(base_forn: pd.DataFrame, forn_sel: str) -> None:
     anos_forn = base_forn["ano"].dropna()
     if not anos_forn.empty:
         periodo_str = f"{int(anos_forn.min())} – {int(anos_forn.max())}"
@@ -50,18 +77,13 @@ def render(base: pd.DataFrame):
         periodo_str = "—"
 
     page_header(forn_sel, f"{len(base_forn):,} pagamentos".replace(",", "."))
-    st.caption(
-        "Use o seletor acima para escolher outro fornecedor. "
-        "A lista está ordenada do maior para o menor recebedor."
-    )
 
     f1, f2, f3, f4 = st.columns(4)
     f1.metric("Total recebido", formatar_mi(base_forn["valor"].sum()))
-    f2.metric("Lançamentos", f'{len(base_forn):,}'.replace(",", "."))
+    f2.metric("Lançamentos", f"{len(base_forn):,}".replace(",", "."))
     f3.metric("Secretarias atendidas", str(base_forn["secretaria"].nunique()))
     f4.metric("Período", periodo_str)
 
-    # ── Evolução anual e mensal ───────────────────────────────────
     col_f1, col_f2 = st.columns(2)
 
     with col_f1:
@@ -112,7 +134,6 @@ def render(base: pd.DataFrame):
         fig_mes_f.update_layout(**layout)
         st.plotly_chart(fig_mes_f, use_container_width=True)
 
-    # ── Distribuição por secretaria e recurso ─────────────────────
     col_f3, col_f4 = st.columns(2)
 
     with col_f3:
@@ -136,21 +157,17 @@ def render(base: pd.DataFrame):
             font=dict(family="Inter", color="#e6edf6"),
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             height=360, margin=dict(t=10, b=10, l=10, r=10),
-            legend=dict(
-                orientation="v", y=0.5, x=1.02,
-                font=dict(size=11, color="#aab4c4"),
-                bgcolor="rgba(0,0,0,0)",
-            ),
-            hoverlabel=dict(
-                bgcolor="#1a1f2b", bordercolor="rgba(255,255,255,0.10)",
-                font=dict(family="Inter", color="#e6edf6"),
-            ),
+            legend=dict(orientation="v", y=0.5, x=1.02,
+                        font=dict(size=11, color="#aab4c4"),
+                        bgcolor="rgba(0,0,0,0)"),
+            hoverlabel=dict(bgcolor="#1a1f2b", bordercolor="rgba(255,255,255,0.10)",
+                            font=dict(family="Inter", color="#e6edf6")),
         )
         st.plotly_chart(fig_sec_f, use_container_width=True)
 
     with col_f4:
         section_title("Top fontes de recurso")
-        st.caption("De qual recurso (fundo, ICMS etc) saiu o dinheiro pago a este fornecedor.")
+        st.caption("De qual recurso (fundo, ICMS etc) saiu o dinheiro pago.")
         rec_forn = (
             base_forn.groupby("recurso", as_index=False)["valor"]
             .sum().sort_values("valor", ascending=False).head(10)
@@ -175,7 +192,6 @@ def render(base: pd.DataFrame):
         fig_rec_f.update_layout(**layout)
         st.plotly_chart(fig_rec_f, use_container_width=True)
 
-    # ── Pagamentos por ano (expansíveis) ─────────────────────────
     section_title(f"Pagamentos detalhados — {forn_sel}")
 
     pag_forn = base_forn.copy().sort_values(["ano", "mes", "data"])
@@ -233,4 +249,135 @@ def render(base: pd.DataFrame):
         file_name=f"fornecedor_{forn_sel[:40].replace(' ', '_')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="dl_forn",
+    )
+
+
+# ===================================================================
+# VISÃO COMPARATIVA — múltiplos fornecedores
+# ===================================================================
+def _render_comparativo(base_forn: pd.DataFrame, forn_sel: list[str]) -> None:
+    titulo = f"{len(forn_sel)} fornecedores comparados"
+    page_header(titulo, f"{len(base_forn):,} pagamentos no total".replace(",", "."))
+
+    # KPIs agregados
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total recebido (somado)", formatar_mi(base_forn["valor"].sum()))
+    k2.metric("Lançamentos", f"{len(base_forn):,}".replace(",", "."))
+    k3.metric("Secretarias atendidas", str(base_forn["secretaria"].nunique()))
+    anos_forn = base_forn["ano"].dropna()
+    periodo_str = (f"{int(anos_forn.min())} – {int(anos_forn.max())}"
+                   if not anos_forn.empty else "—")
+    k4.metric("Período", periodo_str)
+
+    # Resumo por fornecedor (tabela)
+    section_title("Resumo por fornecedor")
+    st.caption("Cada linha é um fornecedor distinto. Clique no cabeçalho pra ordenar.")
+    resumo = (
+        base_forn.groupby("favorecido", as_index=False)
+        .agg(total=("valor", "sum"),
+             lancamentos=("valor", "count"),
+             secretarias=("secretaria", "nunique"),
+             primeira=("data", "min"),
+             ultima=("data", "max"))
+        .sort_values("total", ascending=False)
+    )
+    resumo["Total"] = resumo["total"].apply(formatar_brl)
+    resumo["Período"] = resumo.apply(
+        lambda r: f"{formatar_data(r['primeira'])} – {formatar_data(r['ultima'])}",
+        axis=1,
+    )
+    st.dataframe(
+        resumo[["favorecido", "Total", "lancamentos", "secretarias", "Período"]].rename(
+            columns={
+                "favorecido": "Fornecedor",
+                "lancamentos": "Lanç.",
+                "secretarias": "Sec.",
+            }
+        ),
+        hide_index=True, use_container_width=True, height=min(420, 50 + 38 * len(resumo)),
+    )
+
+    # Comparativo mensal — barras empilhadas por fornecedor
+    section_title("Comparativo mensal")
+    st.caption("Cada cor é um fornecedor. Compare quem recebeu mais em cada mês.")
+    mes_comp = (
+        base_forn.groupby(["ano", "mes", "favorecido"], as_index=False)["valor"].sum()
+        .sort_values(["ano", "mes"])
+    )
+    mes_comp["periodo"] = safe_periodo(mes_comp["mes"], mes_comp["ano"])
+    ordem_periodos = (
+        mes_comp[["ano", "mes", "periodo"]]
+        .drop_duplicates().sort_values(["ano", "mes"])["periodo"].tolist()
+    )
+    fig_cmp = px.bar(
+        mes_comp, x="periodo", y="valor", color="favorecido",
+        barmode="stack",
+        category_orders={"periodo": ordem_periodos},
+        color_discrete_sequence=PALETA_EXEC,
+    )
+    fig_cmp.update_traces(
+        hovertemplate="<b>%{fullData.name}</b><br>%{x}<br>R$ %{y:,.2f}<extra></extra>",
+    )
+    layout = time_layout(height=420, show_y_ticks=True)
+    layout["xaxis"]["categoryorder"] = "array"
+    layout["xaxis"]["categoryarray"] = ordem_periodos
+    fig_cmp.update_layout(**layout)
+    st.plotly_chart(fig_cmp, use_container_width=True)
+
+    # Total por fornecedor (barra horizontal)
+    section_title("Total acumulado por fornecedor")
+    tot = resumo.sort_values("total", ascending=True).copy()
+    tot["label"] = tot["total"].apply(formatar_mi)
+    fig_tot = px.bar(
+        tot, x="total", y="favorecido", orientation="h",
+        text="label",
+        color="favorecido",
+        color_discrete_sequence=PALETA_EXEC,
+    )
+    fig_tot.update_traces(
+        textposition="outside",
+        textfont=dict(size=11, color="#e6edf6"),
+        cliponaxis=False,
+        hovertemplate="<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>",
+    )
+    layout = bar_layout(height=max(280, 42 * len(tot) + 80), legend=False, font_size=11)
+    if not tot.empty:
+        layout["xaxis"]["range"] = [0, tot["total"].max() * 1.20]
+    fig_tot.update_layout(**layout)
+    st.plotly_chart(fig_tot, use_container_width=True)
+
+    # Lançamentos individuais
+    section_title("Todos os pagamentos selecionados")
+    pag = base_forn.copy().sort_values(["data", "favorecido"])
+    pag["data_fmt"] = pag["data"].apply(formatar_data)
+    pag["valor_fmt"] = pag["valor"].apply(formatar_brl)
+    st.dataframe(
+        pag[[
+            "data_fmt", "favorecido", "secretaria",
+            "recurso", "valor_fmt", "descricao",
+        ]].rename(columns={
+            "data_fmt": "Data", "favorecido": "Fornecedor",
+            "secretaria": "Secretaria", "recurso": "Recurso",
+            "valor_fmt": "Valor", "descricao": "Descrição",
+        }),
+        hide_index=True, use_container_width=True, height=480,
+    )
+
+    st.download_button(
+        f"📥 Exportar {len(forn_sel)} fornecedores",
+        data=excel_download(
+            pag[[
+                "data_fmt", "ano", "mes_nome", "favorecido", "secretaria",
+                "recurso", "valor_fmt", "valor", "descricao",
+            ]].rename(columns={
+                "data_fmt": "Data", "ano": "Ano", "mes_nome": "Mês",
+                "favorecido": "Fornecedor",
+                "secretaria": "Secretaria", "recurso": "Recurso",
+                "valor_fmt": "Valor Formatado", "valor": "Valor",
+                "descricao": "Descrição",
+            })
+        ),
+        file_name=f"comparativo_{len(forn_sel)}_fornecedores.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_forn_multi",
     )

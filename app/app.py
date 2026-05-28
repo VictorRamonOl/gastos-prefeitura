@@ -17,7 +17,7 @@ from app.helpers import (
     carregar_dados, aplicar_filtros,
     build_color_map, formatar_brl, formatar_mi,
 )
-from app.ui import inject_css, hero
+from app.ui import inject_css, hero, force_sidebar_open
 from app.views import geral, secretaria, fornecedor, rankings, base_detalhada, admin
 
 
@@ -29,6 +29,7 @@ from app.views import geral, secretaria, fornecedor, rankings, base_detalhada, a
 def render():
     """Renderiza o dashboard de Despesas. Chamado pelo Portal Central."""
     inject_css()
+    force_sidebar_open()
 
     # Carga de dados (antes do hero — precisamos do período pra pills)
     try:

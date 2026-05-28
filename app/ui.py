@@ -26,6 +26,78 @@ def inject_css() -> None:
     st.markdown(_build_css(), unsafe_allow_html=True)
 
 
+def force_sidebar_open() -> None:
+    """Força a sidebar a abrir (vence o localStorage que o Streamlit guarda
+    do estado anterior). Chame após inject_css() — usa components.html para
+    rodar JS no iframe pai."""
+    import streamlit.components.v1 as components
+    components.html(_FORCE_SIDEBAR_JS, height=0)
+
+
+_FORCE_SIDEBAR_JS = """
+<script>
+(function() {
+  const win = window.parent;
+  const doc = win.document;
+  let attempts = 0;
+  const MAX = 40;
+
+  function isCollapsed(sb) {
+    if (!sb) return true;
+    if (sb.getAttribute('aria-expanded') === 'false') return true;
+    if (sb.offsetWidth < 100) return true;
+    const cs = win.getComputedStyle(sb);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return true;
+    if (parseFloat(cs.transform.split(',')[4] || '0') < -100) return true;
+    return false;
+  }
+
+  function findExpandButton() {
+    const candidates = [
+      '[data-testid="stSidebarCollapsedControl"] button',
+      '[data-testid="stSidebarCollapseButton"] button',
+      'button[data-testid="stExpandSidebarButton"]',
+      'button[kind="headerNoPadding"]',
+      'section[data-testid="stSidebar"] button[kind="header"]',
+    ];
+    for (const sel of candidates) {
+      const b = doc.querySelector(sel);
+      if (b) return b;
+    }
+    return null;
+  }
+
+  function tryExpand() {
+    attempts++;
+    if (attempts > MAX) return;
+
+    const sb = doc.querySelector('section[data-testid="stSidebar"]');
+    if (!sb) { setTimeout(tryExpand, 150); return; }
+
+    if (!isCollapsed(sb)) {
+      // já está aberta — só garante que o conteúdo seja visível
+      sb.style.display = 'block';
+      sb.style.visibility = 'visible';
+      return;
+    }
+
+    const btn = findExpandButton();
+    if (btn) {
+      try { btn.click(); } catch(e) {}
+    }
+    setTimeout(tryExpand, 200);
+  }
+
+  // Também limpa qualquer flag de "collapsed" salva pelo portal
+  try { win.localStorage.removeItem('apmc_sb_collapsed'); } catch(e) {}
+  try { win.localStorage.removeItem('sidebarState'); } catch(e) {}
+
+  setTimeout(tryExpand, 100);
+})();
+</script>
+"""
+
+
 def hero(title: str, subtitle: str | None = None,
          eyebrow: str | None = None, pills: list[str] | None = None) -> None:
     """Header hero com gradiente, eyebrow opcional e pills de metadata."""
@@ -240,10 +312,74 @@ hr, [data-testid="stDivider"] {
   margin: 1.4rem 0 !important;
 }
 
-/* SIDEBAR */
+/* ============ MULTISELECT — pills coloridas, mais largas ============ */
+[data-baseweb="tag"] {
+  background: linear-gradient(135deg, rgba(30,91,158,0.65), rgba(42,108,179,0.45)) !important;
+  border: 1px solid rgba(74,144,212,0.55) !important;
+  border-radius: 7px !important;
+  color: #ffffff !important;
+  font-weight: 500 !important;
+  font-size: 0.82rem !important;
+  padding: 2px 4px !important;
+  box-shadow: 0 2px 6px rgba(30,91,158,0.25) !important;
+}
+[data-baseweb="tag"] svg { color: #c8d4e6 !important; }
+[data-baseweb="tag"]:hover {
+  background: linear-gradient(135deg, rgba(30,91,158,0.85), rgba(42,108,179,0.65)) !important;
+}
+
+/* Dropdown items */
+li[role="option"] {
+  background: var(--surface) !important;
+  color: var(--text-1) !important;
+  font-size: 0.88rem !important;
+  padding: 8px 12px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+li[role="option"]:hover {
+  background: rgba(30,91,158,0.20) !important;
+  color: #ffffff !important;
+}
+li[role="option"][aria-selected="true"] {
+  background: rgba(30,91,158,0.35) !important;
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+/* ============ TOOLTIPS / HELP TEXT ============ */
+[data-testid="stTooltipIcon"] {
+  color: var(--accent-2) !important;
+  opacity: 0.65;
+  transition: opacity .15s ease;
+}
+[data-testid="stTooltipIcon"]:hover { opacity: 1; }
+
+/* ============ STATUS NA SIDEBAR ============ */
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] .stTextInput > div > div {
+  background: rgba(255,255,255,0.025) !important;
+  border-color: rgba(255,255,255,0.08) !important;
+}
+
+/* Selectbox single — placeholder mais visível */
+[data-baseweb="select"] div[role="combobox"] {
+  font-size: 0.92rem !important;
+}
+
+/* SIDEBAR — força visibilidade (o portal.py esconde-a no hub, precisamos reabrir aqui) */
+section[data-testid="stSidebar"],
 [data-testid="stSidebar"] {
+  display: block !important;
+  visibility: visible !important;
   background: linear-gradient(180deg, #0d121c 0%, #0a0e16 100%) !important;
   border-right: 1px solid var(--border) !important;
+}
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"],
+button[kind="headerNoPadding"] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 [data-testid="stSidebar"] h2 {
   font-size: 0.78rem !important; font-weight: 700 !important;
