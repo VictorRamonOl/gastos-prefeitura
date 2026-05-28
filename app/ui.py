@@ -517,5 +517,132 @@ label, [data-testid="stWidgetLabel"] p {
 
 /* Footer */
 footer, [data-testid="stToolbar"] { visibility: hidden; height: 0; }
+
+/* ============ RESPONSIVO — MOBILE & TABLET ============ */
+
+/* Tablet (≤ 1024px) — ajusta padding e tipografia */
+@media (max-width: 1024px) {
+  .block-container {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-top: 0.5rem !important;
+  }
+  .exec-hero { padding: 16px 18px !important; margin-bottom: 14px !important; }
+  .exec-hero h1 { font-size: 1.5rem !important; }
+  .exec-hero .subtitle { font-size: 0.88rem !important; }
+  [data-testid="stMetricValue"] { font-size: 1.4rem !important; }
+  [data-testid="stMetricLabel"] { font-size: 0.7rem !important; }
+}
+
+/* Celular (≤ 768px) — empilha tudo, KPIs 2 por linha, sidebar overlay */
+@media (max-width: 768px) {
+  .block-container {
+    padding-left: 0.6rem !important;
+    padding-right: 0.6rem !important;
+    padding-top: 0.3rem !important;
+    padding-bottom: 2rem !important;
+  }
+
+  /* Hero compacto */
+  .exec-hero { padding: 12px 14px !important; }
+  .exec-hero h1 { font-size: 1.25rem !important; margin: 4px 0 !important; }
+  .exec-hero .eyebrow { font-size: 0.62rem !important; }
+  .exec-hero .subtitle { font-size: 0.78rem !important; line-height: 1.4 !important; }
+  .exec-hero .pill { font-size: 0.68rem !important; padding: 2px 8px !important; }
+
+  /* Page header */
+  .page-header { flex-direction: column; gap: 4px; }
+  .page-header .ph-title { font-size: 1.2rem !important; }
+  .page-header .ph-sub {
+    border-left: none !important; padding-left: 14px !important;
+    font-size: 0.78rem !important;
+  }
+
+  /* KPIs / Métricas: empilha em 2 colunas */
+  [data-testid="column"] {
+    flex: 0 0 calc(50% - 8px) !important;
+    min-width: calc(50% - 8px) !important;
+    margin-bottom: 8px;
+  }
+  [data-testid="stMetric"] {
+    padding: 10px 12px 12px !important;
+  }
+  [data-testid="stMetricValue"] {
+    font-size: 1.15rem !important;
+    line-height: 1.2 !important;
+  }
+  [data-testid="stMetricLabel"] {
+    font-size: 0.62rem !important;
+    letter-spacing: 0.04em !important;
+  }
+  [data-testid="stMetricDelta"] { font-size: 0.68rem !important; }
+
+  /* Section title menor */
+  .exec-section-title {
+    font-size: 0.92rem !important;
+    margin: 16px 0 8px 0 !important;
+  }
+
+  /* Sidebar vira overlay (Streamlit já faz isso por padrão) */
+  [data-testid="stSidebar"] {
+    width: 85vw !important;
+    max-width: 320px !important;
+    z-index: 1000 !important;
+  }
+  [data-testid="stSidebar"] > div { padding: 0.8rem 0.6rem !important; }
+
+  /* Tabs ocupam menos espaço */
+  [data-baseweb="tab"] {
+    padding: 8px 10px !important;
+    font-size: 0.78rem !important;
+  }
+
+  /* Tooltip text menor */
+  [data-testid="stCaptionContainer"] { font-size: 0.72rem !important; line-height: 1.4 !important; }
+
+  /* Plotly: reduzir altura padrão */
+  [data-testid="stPlotlyChart"] {
+    padding: 8px 6px !important;
+  }
+  [data-testid="stPlotlyChart"] > div { min-height: 280px; }
+
+  /* DataFrames: scroll horizontal */
+  [data-testid="stDataFrame"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  [data-testid="stDataFrame"] table { font-size: 0.8rem !important; }
+
+  /* Multi-select tags menores */
+  [data-baseweb="tag"] {
+    font-size: 0.72rem !important;
+    padding: 1px 3px !important;
+  }
+
+  /* Botões full-width naturais */
+  .stButton > button, .stDownloadButton > button {
+    padding: 10px 14px !important;
+    font-size: 0.86rem !important;
+  }
+
+  /* Expanders compactos */
+  [data-testid="stExpander"] summary {
+    font-size: 0.86rem !important;
+    padding: 8px 10px !important;
+  }
+
+  /* Esconde a barra de "Made with Streamlit" se aparecer */
+  footer { display: none !important; }
+}
+
+/* Celular muito pequeno (≤ 480px) — empilha tudo em 1 coluna */
+@media (max-width: 480px) {
+  [data-testid="column"] {
+    flex: 0 0 100% !important;
+    min-width: 100% !important;
+  }
+  .exec-hero h1 { font-size: 1.1rem !important; }
+  [data-testid="stMetricValue"] { font-size: 1.3rem !important; }
+}
 </style>
 """

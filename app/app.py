@@ -14,7 +14,7 @@ import streamlit as st
 from app.auth import login_requerido, usuario_atual, is_admin, logout
 from app.helpers import (
     MESES_FULL, MESES_NOMES,
-    carregar_dados, aplicar_filtros,
+    carregar_dados, aplicar_filtros, ultima_atualizacao,
     build_color_map, formatar_brl, formatar_mi,
 )
 from app.ui import inject_css, hero, force_sidebar_open
@@ -76,6 +76,19 @@ def render():
 
     # Sidebar — Filtros
     st.sidebar.header("🔎 Filtros")
+
+    # Última atualização — minimalista, no topo da sidebar
+    _ult = ultima_atualizacao()
+    if _ult:
+        st.sidebar.markdown(
+            f"<div style='font-size:0.74rem;color:#6b7689;"
+            f"padding:6px 0 10px 0;letter-spacing:0.02em;border-bottom:1px solid rgba(255,255,255,0.05);"
+            f"margin-bottom:12px'>"
+            f"<span style='color:#9aa4b4'>●</span> Última atualização: "
+            f"<b style='color:#aab4c4'>{_ult}</b></div>",
+            unsafe_allow_html=True,
+        )
+
     st.sidebar.caption(
         "Escolha um ou mais valores em cada filtro. "
         "Deixar em branco mostra TUDO daquele campo."

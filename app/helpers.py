@@ -161,25 +161,36 @@ def safe_periodo(mes_series: pd.Series, ano_series: pd.Series) -> pd.Series:
 # -----------------------------------------------------------------
 # Carga e filtragem de dados
 # -----------------------------------------------------------------
-@st.cache_data(ttl=300)
+# Cache de 30min — dados mudam só quando o ETL roda (1× por importação).
+# TTL maior reduz pressão no MySQL drasticamente.
+@st.cache_data(ttl=1800, show_spinner="Carregando dados…")
 def carregar_dados() -> pd.DataFrame:
+    """Carrega tudo da tabela pagamentos. Cached por 30min."""
+    # SELECT enxuto + tipos definidos no driver — evita pandas inferir.
     df = query_df("""
-        SELECT data, ano, mes, descricao, favorecido, recurso, secretaria, conta, valor, aba_origem
-        FROM pagamentos ORDER BY ano, mes, data
+        SELECT
+            data, ano, mes, descricao, favorecido, recurso, secretaria,
+            conta, valor, aba_origem
+        FROM pagamentos
+        WHERE ano IS NOT NULL AND mes IS NOT NULL
+        ORDER BY ano, mes, data
     """)
     if df.empty:
         return df
 
     if "data" in df.columns:
         df["data"] = pd.to_datetime(df["data"], errors="coerce")
-    for col in ["ano", "mes", "valor"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Conversão vetorizada — bem mais rápido que loop
+    df["ano"] = pd.to_numeric(df["ano"], errors="coerce").astype("Int32")
+    df["mes"] = pd.to_numeric(df["mes"], errors="coerce").astype("Int8")
+    df["valor"] = pd.to_numeric(df["valor"], errors="coerce").astype("float64")
+
+    # Strings: fillna + strip vetorizado
     for col in ["favorecido", "recurso", "secretaria", "descricao", "conta"]:
         if col in df.columns:
             df[col] = df[col].fillna("").astype(str).str.strip()
 
-    # Remove linhas sem ano/mes — não exibíveis nos gráficos
     df = df.dropna(subset=["ano", "mes"])
     df["ano"] = df["ano"].astype(int)
     df["mes"] = df["mes"].astype(int)
@@ -187,6 +198,22 @@ def carregar_dados() -> pd.DataFrame:
     df["mes_nome"] = df["mes"].map(MESES_FULL)
     df["periodo"] = safe_periodo(df["mes"], df["ano"])
     return df
+
+
+@st.cache_data(ttl=300)
+def ultima_atualizacao() -> str | None:
+    """Retorna a data/hora da última importação no formato 'dd/mm/aaaa às HH:MM'."""
+    try:
+        df = query_df("""
+            SELECT MAX(importado_em) AS ultima
+            FROM pagamentos
+        """)
+        if df.empty or pd.isna(df.iloc[0]["ultima"]):
+            return None
+        ts = pd.to_datetime(df.iloc[0]["ultima"])
+        return ts.strftime("%d/%m/%Y às %H:%M")
+    except Exception:
+        return None
 
 
 def aplicar_filtros(
