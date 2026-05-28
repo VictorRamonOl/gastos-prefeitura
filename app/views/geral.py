@@ -6,12 +6,18 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-from app.helpers import MESES_NOMES, formatar_mi, bar_layout, safe_periodo
+from app.helpers import MESES_NOMES, formatar_mi, bar_layout, time_layout, safe_periodo
+from app.ui import section_title
 
 
 def render(base: pd.DataFrame, cores_map: dict):
-    # ── 1. Despesas mensais empilhadas por secretaria ─────────────
-    st.markdown("#### Despesas Totais por Mês")
+    # ── 1. Evolução mensal empilhada por secretaria ───────────────
+    section_title("Evolução mensal — empilhado por secretaria")
+    st.caption(
+        "Como ler: a altura total de cada barra é o gasto do mês. "
+        "Cada cor representa uma secretaria. Os rótulos no topo mostram os 6 maiores meses. "
+        "Passe o mouse para ver o valor exato."
+    )
 
     gasto_mensal_sec = (
         base.groupby(["ano", "mes", "secretaria"], as_index=False)["valor"]
@@ -27,7 +33,6 @@ def render(base: pd.DataFrame, cores_map: dict):
         gasto_mensal_sec.groupby("periodo")["valor"]
         .sum().reindex(ordem_periodos).reset_index()
     )
-    total_por_periodo.columns = ["periodo", "valor"]
 
     fig_evo = px.bar(
         gasto_mensal_sec, x="periodo", y="valor", color="secretaria",
@@ -37,40 +42,33 @@ def render(base: pd.DataFrame, cores_map: dict):
         custom_data=["secretaria"],
     )
     y_max = total_por_periodo["valor"].max() or 1
-    for _, row in total_por_periodo.iterrows():
+    # Anota apenas o total no topo das barras com maior gasto (top 6) para evitar sobreposição.
+    top_periodos = total_por_periodo.nlargest(6, "valor")
+    for _, row in top_periodos.iterrows():
         if row["valor"] > 0:
             fig_evo.add_annotation(
                 x=row["periodo"], y=row["valor"],
                 text=f"<b>{formatar_mi(row['valor'])}</b>",
-                showarrow=False, yshift=10,
-                font=dict(size=10, color="#cccccc"),
+                showarrow=False, yshift=12,
+                font=dict(size=10, color="#e6edf6"),
             )
     fig_evo.update_traces(
         hovertemplate="<b>%{customdata[0]}</b><br>%{x}<br>R$ %{y:,.2f}<extra></extra>",
         selector=dict(type="bar"),
     )
-    fig_evo.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(
-            categoryorder="array", categoryarray=ordem_periodos,
-            tickfont=dict(size=11), showgrid=False, zeroline=False,
-        ),
-        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False,
-                   range=[0, y_max * 1.12]),
-        legend=dict(orientation="h", y=-0.14, x=0, font=dict(size=11), title_text=""),
-        margin=dict(l=8, r=8, t=20, b=60),
-        height=420,
-        bargap=0.18,
-    )
+    layout = time_layout(height=480, show_y_ticks=False)
+    layout["yaxis"]["range"] = [0, y_max * 1.18]
+    layout["xaxis"]["categoryorder"] = "array"
+    layout["xaxis"]["categoryarray"] = ordem_periodos
+    fig_evo.update_layout(**layout)
     st.plotly_chart(fig_evo, use_container_width=True)
-
-    st.markdown("---")
 
     # ── 2. Top 15 Fornecedores + Gasto por Secretaria ─────────────
     col2a, col2b = st.columns([3, 2])
 
     with col2a:
-        st.markdown("#### Top 15 Fornecedores")
+        section_title("Top 15 fornecedores")
+        st.caption("Empresas/pessoas que mais receberam pagamentos. Cor = secretaria que mais paga.")
         top15_total = (
             base[base["favorecido"].str.strip() != ""]
             .groupby("favorecido", as_index=False)["valor"].sum()
@@ -92,15 +90,19 @@ def render(base: pd.DataFrame, cores_map: dict):
             text="label",
         )
         fig_forn.update_traces(
-            textposition="inside", insidetextanchor="end",
-            textfont=dict(size=12, color="white"),
+            textposition="outside",
+            textfont=dict(size=11, color="#e6edf6"),
+            cliponaxis=False,
             hovertemplate="<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>",
         )
-        fig_forn.update_layout(**bar_layout(height=520, font_size=11))
+        layout = bar_layout(height=540, font_size=11)
+        layout["xaxis"]["range"] = [0, top15["valor"].max() * 1.18]
+        fig_forn.update_layout(**layout)
         st.plotly_chart(fig_forn, use_container_width=True)
 
     with col2b:
-        st.markdown("#### Gasto por Secretaria")
+        section_title("Gasto por secretaria")
+        st.caption("Total pago por cada secretaria, com o percentual sobre o total geral.")
         sec_tot = (
             base[~base["secretaria"].str.contains("INTERNA|TRANSFER", na=False, case=False)]
             .groupby("secretaria", as_index=False)["valor"]
@@ -117,20 +119,22 @@ def render(base: pd.DataFrame, cores_map: dict):
             text="label",
         )
         fig_sec.update_traces(
-            textposition="inside", insidetextanchor="end",
-            textfont=dict(size=12, color="white"),
+            textposition="outside",
+            textfont=dict(size=11, color="#e6edf6"),
+            cliponaxis=False,
             hovertemplate="<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>",
         )
-        fig_sec.update_layout(**bar_layout(height=520, legend=False, font_size=13))
+        layout = bar_layout(height=540, legend=False, font_size=12)
+        layout["xaxis"]["range"] = [0, sec_tot["valor"].max() * 1.30]
+        fig_sec.update_layout(**layout)
         st.plotly_chart(fig_sec, use_container_width=True)
-
-    st.markdown("---")
 
     # ── 3. Top 15 Programas + Maior fornecedor por mês ─────────────
     col3a, col3b = st.columns([3, 2])
 
     with col3a:
-        st.markdown("#### Top 15 Programas / Fontes de Recurso")
+        section_title("Top 15 fontes de recurso")
+        st.caption("De onde veio o dinheiro pago — fundo federal, ICMS, recursos próprios etc.")
         top_rec = (
             base.groupby(["secretaria", "recurso"], as_index=False)["valor"].sum()
         )
@@ -146,15 +150,19 @@ def render(base: pd.DataFrame, cores_map: dict):
             text="label",
         )
         fig_rec.update_traces(
-            textposition="inside", insidetextanchor="end",
-            textfont=dict(size=12, color="white"),
+            textposition="outside",
+            textfont=dict(size=11, color="#e6edf6"),
+            cliponaxis=False,
             hovertemplate="<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>",
         )
-        fig_rec.update_layout(**bar_layout(height=520, font_size=11))
+        layout = bar_layout(height=540, font_size=11)
+        layout["xaxis"]["range"] = [0, top_rec["valor"].max() * 1.18]
+        fig_rec.update_layout(**layout)
         st.plotly_chart(fig_rec, use_container_width=True)
 
     with col3b:
-        st.markdown("#### Maior Fornecedor por Mês")
+        section_title("Maior fornecedor por mês")
+        st.caption("Quem recebeu o maior pagamento em cada mês.")
 
         rank_mes = (
             base.groupby(["ano", "mes", "favorecido", "secretaria"], as_index=False)["valor"].sum()
@@ -175,7 +183,7 @@ def render(base: pd.DataFrame, cores_map: dict):
                 ).reset_index(drop=True),
                 hide_index=True,
                 use_container_width=True,
-                height=520,
+                height=540,
                 column_config={
                     "Período":    st.column_config.TextColumn("Mês", width="small"),
                     "Fornecedor": st.column_config.TextColumn("Maior Fornecedor"),

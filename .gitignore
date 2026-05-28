@@ -30,6 +30,10 @@ Thumbs.db
 *.log
 scripts/etl_railway.log
 
+# Dumps SQL (contêm hashes de senha de usuários — enviar via scp)
+sql/dump_*.sql
+sql/*.sql.gz
+
 # SSL certs (gerados no VPS)
 ssl/
 

@@ -6,7 +6,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-from app.helpers import MESES_NOMES, formatar_mi, formatar_brl, excel_download, safe_periodo
+from app.helpers import (
+    MESES_NOMES, formatar_mi, formatar_brl, excel_download, safe_periodo,
+    bar_layout, time_layout,
+)
+from app.ui import section_title, page_header
 
 
 def render(base: pd.DataFrame, cores_map: dict):
@@ -19,7 +23,8 @@ def render(base: pd.DataFrame, cores_map: dict):
         return
 
     # ── Panorama de todas as secretarias ─────────────────────────
-    st.markdown("### Todas as Secretarias — Panorama")
+    section_title("Panorama — todas as secretarias")
+    st.caption("Resumo do gasto de cada secretaria no período filtrado. Use o seletor abaixo para ver detalhes.")
 
     sec_resumo = (
         base.groupby("secretaria", as_index=False)
@@ -41,51 +46,57 @@ def render(base: pd.DataFrame, cores_map: dict):
             st.metric(
                 label=row["secretaria"],
                 value=row["total_fmt"],
-                delta=f'{row["pct"]}% do total | {row["fornecedores"]} fornecedores',
+                delta=f'{row["pct"]}% do total · {int(row["fornecedores"])} fornecedores',
                 delta_color="off",
             )
 
-    st.markdown("---")
-
     # ── Detalhe de uma secretaria ────────────────────────────────
+    section_title("Detalhe de uma secretaria")
+
     sec_escolhida = st.selectbox(
-        "Detalhes de uma secretaria",
+        "Selecione a secretaria",
         secretarias_presentes,
         key="sec_detalhe",
     )
     base_sec = base[base["secretaria"] == sec_escolhida]
+    cor_sec = cores_map.get(sec_escolhida, "#2563eb")
+
+    page_header(sec_escolhida, f"{len(base_sec):,} lançamentos".replace(",", "."))
 
     s1, s2, s3, s4 = st.columns(4)
     s1.metric("Total", formatar_mi(base_sec["valor"].sum()))
     s2.metric("Lançamentos", f'{len(base_sec):,}'.replace(",", "."))
     s3.metric("Fornecedores únicos", f'{base_sec["favorecido"].nunique():,}'.replace(",", "."))
-    s4.metric("Recursos (fontes)", f'{base_sec["recurso"].nunique():,}'.replace(",", "."))
+    s4.metric("Fontes de recurso", f'{base_sec["recurso"].nunique():,}'.replace(",", "."))
 
     c1, c2 = st.columns([1, 1])
 
     with c1:
-        st.markdown(f"**Evolução mensal — {sec_escolhida}**")
+        section_title("Evolução mensal")
         mes_sec = (
             base_sec.groupby(["ano", "mes"], as_index=False)["valor"]
             .sum().sort_values(["ano", "mes"])
         )
         mes_sec["periodo"] = safe_periodo(mes_sec["mes"], mes_sec["ano"])
+        mes_sec["label"] = mes_sec["valor"].apply(formatar_mi)
         fig_ms = px.bar(
             mes_sec, x="periodo", y="valor",
-            text=mes_sec["valor"].apply(formatar_mi),
-            color_discrete_sequence=["#2196F3"],
+            text="label",
+            color_discrete_sequence=[cor_sec],
         )
-        fig_ms.update_traces(textposition="outside")
-        fig_ms.update_layout(
-            xaxis_title="", yaxis_title="R$",
-            plot_bgcolor="white", height=340,
-            yaxis=dict(showticklabels=False, showgrid=False),
-            margin=dict(t=30, b=10),
+        fig_ms.update_traces(
+            textposition="outside", textfont=dict(size=10, color="#aab4c4"),
+            cliponaxis=False,
+            hovertemplate="<b>%{x}</b><br>R$ %{y:,.2f}<extra></extra>",
         )
+        layout = time_layout(height=360, show_y_ticks=False)
+        if not mes_sec.empty:
+            layout["yaxis"]["range"] = [0, mes_sec["valor"].max() * 1.20]
+        fig_ms.update_layout(**layout)
         st.plotly_chart(fig_ms, use_container_width=True)
 
     with c2:
-        st.markdown(f"**Recursos (fontes) — {sec_escolhida}**")
+        section_title("Top fontes de recurso")
         rec_sec = (
             base_sec.groupby("recurso", as_index=False)["valor"]
             .sum().sort_values("valor", ascending=True)
@@ -95,18 +106,21 @@ def render(base: pd.DataFrame, cores_map: dict):
         fig_rec = px.bar(
             rec_sec, x="valor", y="recurso", orientation="h",
             text="valor_fmt",
-            color_discrete_sequence=["#4CAF50"],
+            color_discrete_sequence=[cor_sec],
         )
-        fig_rec.update_traces(textposition="inside", insidetextanchor="middle")
-        fig_rec.update_layout(
-            xaxis_title="", yaxis_title="",
-            plot_bgcolor="white", height=340,
-            xaxis=dict(showticklabels=False, showgrid=False),
-            margin=dict(t=30, b=10),
+        fig_rec.update_traces(
+            textposition="outside",
+            textfont=dict(size=11, color="#e6edf6"),
+            cliponaxis=False,
+            hovertemplate="<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>",
         )
+        layout = bar_layout(height=360, legend=False, font_size=11)
+        if not rec_sec.empty:
+            layout["xaxis"]["range"] = [0, rec_sec["valor"].max() * 1.22]
+        fig_rec.update_layout(**layout)
         st.plotly_chart(fig_rec, use_container_width=True)
 
-    st.markdown(f"**Top 20 Fornecedores — {sec_escolhida}**")
+    section_title(f"Top 20 fornecedores — {sec_escolhida}")
     top_fav_sec = (
         base_sec.groupby("favorecido", as_index=False)["valor"]
         .sum().sort_values("valor", ascending=True)
@@ -117,19 +131,22 @@ def render(base: pd.DataFrame, cores_map: dict):
     fig_fav = px.bar(
         top_fav_sec, x="valor", y="favorecido", orientation="h",
         text="valor_fmt",
-        color_discrete_sequence=["#FF9800"],
+        color_discrete_sequence=[cor_sec],
     )
-    fig_fav.update_traces(textposition="inside", insidetextanchor="middle")
-    fig_fav.update_layout(
-        yaxis={"categoryorder": "total ascending"},
-        xaxis_title="", yaxis_title="",
-        plot_bgcolor="white", height=520,
-        xaxis=dict(showticklabels=False, showgrid=False),
-        margin=dict(l=10, r=10),
+    fig_fav.update_traces(
+        textposition="outside",
+        textfont=dict(size=11, color="#e6edf6"),
+        cliponaxis=False,
+        hovertemplate="<b>%{y}</b><br>R$ %{x:,.2f}<extra></extra>",
     )
+    layout = bar_layout(height=540, legend=False, font_size=11)
+    if not top_fav_sec.empty:
+        layout["xaxis"]["range"] = [0, top_fav_sec["valor"].max() * 1.18]
+    layout["yaxis"]["categoryorder"] = "total ascending"
+    fig_fav.update_layout(**layout)
     st.plotly_chart(fig_fav, use_container_width=True)
 
-    st.markdown("**Tabela completa de fornecedores**")
+    section_title("Tabela completa de fornecedores")
     res_sec = (
         base_sec.groupby("favorecido", as_index=False)
         .agg(qtd=("valor", "count"), total=("valor", "sum"))

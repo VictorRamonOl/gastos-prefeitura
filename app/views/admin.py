@@ -7,6 +7,7 @@ import streamlit as st
 
 from app.auth import is_admin
 from app.db import query_df
+from app.ui import section_title
 
 
 def render():
@@ -17,7 +18,7 @@ def render():
     col_a1, col_a2 = st.columns(2)
 
     with col_a1:
-        st.subheader("Últimas importações")
+        section_title("Últimas importações")
         try:
             logs = query_df("""
                 SELECT nome_arquivo, total_linhas, linhas_inseridas,
@@ -32,7 +33,7 @@ def render():
             st.error(f"Erro ao carregar logs: {e}")
 
     with col_a2:
-        st.subheader("Usuários")
+        section_title("Usuários")
         try:
             usuarios_df = query_df("""
                 SELECT username, nome, perfil,
@@ -46,8 +47,7 @@ def render():
         except Exception as e:
             st.error(f"Erro ao carregar usuários: {e}")
 
-    st.markdown("---")
-    st.subheader("Totais por ano")
+    section_title("Totais por ano")
     try:
         tot_ano = query_df("""
             SELECT ano,

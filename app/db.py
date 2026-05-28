@@ -13,13 +13,35 @@ import pandas as pd
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
+def _secrets_file_exists() -> bool:
+    """True se há um secrets.toml acessível (Streamlit Cloud ou ~/.streamlit)."""
+    candidates = [
+        Path.home() / ".streamlit" / "secrets.toml",
+        Path(__file__).resolve().parent.parent / ".streamlit" / "secrets.toml",
+    ]
+    return any(p.exists() for p in candidates)
+
+
 def _cfg(key: str, default: str = "") -> str:
-    """Lê variável do st.secrets (cloud) ou os.environ (local/.env)."""
-    try:
-        import streamlit as st
-        return str(st.secrets.get(key, os.getenv(key, default)))
-    except Exception:
-        return os.getenv(key, default)
+    """Lê variável do os.environ/.env (local) ou st.secrets (cloud).
+
+    Só consulta st.secrets quando um secrets.toml realmente existe — evita
+    o warning 'No secrets found' aparecer no UI quando rodando local com .env.
+    """
+    env_val = os.getenv(key)
+    if env_val is not None:
+        return env_val
+    if _secrets_file_exists():
+        try:
+            import streamlit as st
+            import streamlit.runtime
+            if streamlit.runtime.exists():
+                val = st.secrets.get(key)
+                if val is not None:
+                    return str(val)
+        except Exception:
+            pass
+    return default
 
 
 def _get_engine():
@@ -30,7 +52,13 @@ def _get_engine():
     user = _cfg("DB_USER", "root")
     pwd  = quote_plus(_cfg("DB_PASSWORD", ""))
     url  = f"mysql+mysqlconnector://{user}:{pwd}@{host}:{port}/{db}?charset=utf8mb4"
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+        pool_timeout=30,
+        connect_args={"connect_timeout": 30},
+    )
 
 
 _engine = None
@@ -58,5 +86,12 @@ def get_connection():
 
 def query_df(sql: str, params=None) -> pd.DataFrame:
     """Executa uma query e retorna um DataFrame (sem warnings)."""
-    with get_engine().connect() as conn:
-        return pd.read_sql(text(sql), conn, params=params)
+    global _engine
+    try:
+        with get_engine().connect() as conn:
+            return pd.read_sql(text(sql), conn, params=params)
+    except Exception:
+        # Descarta o engine cacheado e tenta reconectar uma vez
+        _engine = None
+        with get_engine().connect() as conn:
+            return pd.read_sql(text(sql), conn, params=params)

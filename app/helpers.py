@@ -36,11 +36,9 @@ def sem_transferencias(df: pd.DataFrame) -> pd.DataFrame:
     return df[~mask]
 
 
-# Paleta fixa por secretaria — consistente em todos os gráficos
-CORES_FIXAS = [
-    "#1565C0", "#E65100", "#2E7D32", "#6A1B9A",
-    "#00695C", "#AD1457", "#37474F", "#F9A825",
-]
+# Paleta executive — mesma do Dash_APMC, consistente em todos os gráficos
+from app.ui import PALETA_EXEC
+CORES_FIXAS = PALETA_EXEC
 
 
 # -----------------------------------------------------------------
@@ -90,22 +88,65 @@ def build_color_map(df_base: pd.DataFrame) -> dict:
 
 
 def bar_layout(height: int = 400, legend: bool = True, font_size: int = 12) -> dict:
+    """Layout Plotly padrão — transparente, fontes Inter, hover dark, grid sutil."""
     layout = dict(
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
-        yaxis=dict(tickfont=dict(size=font_size), showgrid=False),
+        font=dict(family="Inter, system-ui, sans-serif", color="#e6edf6", size=12),
+        xaxis=dict(
+            showticklabels=False, showgrid=False, zeroline=False,
+            tickfont=dict(color="#aab4c4"),
+        ),
+        yaxis=dict(
+            tickfont=dict(size=font_size, color="#aab4c4"),
+            showgrid=False, zeroline=False,
+        ),
         margin=dict(l=8, r=8, t=32, b=8),
         height=height,
+        hoverlabel=dict(
+            bgcolor="#1a1f2b", bordercolor="rgba(255,255,255,0.10)",
+            font=dict(family="Inter", color="#e6edf6", size=12),
+        ),
     )
     if legend:
         layout["legend"] = dict(
             orientation="h", y=-0.12, x=0,
-            font=dict(size=11), title_text="",
+            font=dict(size=11, color="#aab4c4"), title_text="",
+            bgcolor="rgba(0,0,0,0)",
         )
     else:
         layout["showlegend"] = False
     return layout
+
+
+def time_layout(height: int = 360, show_y_ticks: bool = True) -> dict:
+    """Layout para séries temporais (x = períodos)."""
+    return dict(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, system-ui, sans-serif", color="#e6edf6", size=12),
+        xaxis=dict(
+            showgrid=False, zeroline=False, tickfont=dict(color="#aab4c4", size=10),
+            title_text="", tickangle=-45,
+        ),
+        yaxis=dict(
+            showgrid=True, gridcolor="rgba(255,255,255,0.05)", zeroline=False,
+            showticklabels=show_y_ticks, tickfont=dict(color="#aab4c4", size=11),
+            title_text="",
+        ),
+        margin=dict(l=10, r=10, t=32, b=130),
+        height=height,
+        hoverlabel=dict(
+            bgcolor="#1a1f2b", bordercolor="rgba(255,255,255,0.10)",
+            font=dict(family="Inter", color="#e6edf6", size=12),
+        ),
+        legend=dict(
+            orientation="h", y=-0.45, x=0, yanchor="top",
+            font=dict(size=10, color="#aab4c4"), title_text="",
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        bargap=0.18,
+    )
 
 
 def safe_periodo(mes_series: pd.Series, ano_series: pd.Series) -> pd.Series:
