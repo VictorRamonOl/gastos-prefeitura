@@ -87,23 +87,39 @@ def _row_tuple(row: pd.Series) -> tuple:
 # -----------------------------------------------------------------
 # Carga principal
 # -----------------------------------------------------------------
+def _chave_arquivo(nome: str) -> str:
+    """Normaliza nome do arquivo pra ignorar pequenas variações de digitação.
+    Ex: 'DESPESAS 2026.xlsx' e 'DESPESAS 2026..xlsx' viram a mesma chave."""
+    import re
+    base = re.sub(r"\.+", ".", nome.lower())
+    base = re.sub(r"\s+", " ", base).strip()
+    return base
+
+
 def _limpar_dados_anteriores(arquivo_nome: str) -> int:
     """
     Remove do banco todos os registros de importações anteriores do mesmo arquivo
-    cujo hash ERA diferente (arquivo foi atualizado).
+    OU de arquivos cujo nome só difere por digitação (pontos duplicados, espaços).
     Isso evita acúmulo de dados antigos quando o Excel é editado e reimportado.
     """
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM pagamentos WHERE arquivo_origem = %s",
-            (arquivo_nome,),
-        )
-        removidos = cursor.rowcount
+        # Pega todos os nomes já importados; deleta os que normalizam para a mesma chave.
+        cursor.execute("SELECT DISTINCT arquivo_origem FROM pagamentos WHERE arquivo_origem IS NOT NULL")
+        nomes_existentes = [r[0] for r in cursor.fetchall()]
+        chave_alvo = _chave_arquivo(arquivo_nome)
+        a_remover = [n for n in nomes_existentes if _chave_arquivo(n) == chave_alvo]
+
+        removidos = 0
+        for n in a_remover:
+            cursor.execute("DELETE FROM pagamentos WHERE arquivo_origem = %s", (n,))
+            removidos += cursor.rowcount
+            cursor.execute("DELETE FROM arquivos_importados WHERE nome_arquivo = %s", (n,))
         conn.commit()
         if removidos:
-            print(f"  [load] {removidos} registros anteriores de '{arquivo_nome}' removidos (arquivo atualizado).")
+            origens = ", ".join(repr(n) for n in a_remover)
+            print(f"  [load] {removidos} registros anteriores removidos (origens equivalentes: {origens}).")
         return removidos
     finally:
         try:
